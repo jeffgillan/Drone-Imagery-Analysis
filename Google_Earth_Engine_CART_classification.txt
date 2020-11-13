@@ -1,0 +1,198 @@
+//Supplemental 3. Google Earth Engine Code to classify drone imagery using CART
+//This JavaScript code assumes orthomosaics and vegetation height models have been uploaded to GEE as assets.  
+
+//After uploading individual orthomosaics to GEE, remove the white space around each of the ortho images.
+//I am showing two ortho images as an example 
+var mask = image1.select('b1').neq(255);
+var image1_ = image1.updateMask(mask)
+
+var mask = image2.select('b1').neq(255);
+var image2_ = image2.updateMask(mask)
+
+//Add both images into an image collection
+var ic_sept = ee.ImageCollection
+           .fromImages([image1_,image2_]), select(['b1','b2','b3']);
+
+//Mosaic both orthoimages into a single image                   
+var ic = ic_sept.mosaic();
+
+//Sets a projection using one of the image's coordinate ref. system as well as the scale in meters
+ic = ic.setDefaultProjection({crs:image54.projection().crs(),
+                                                scale:0.01  // 1cm                           
+                                })
+
+print('ic', ic)
+
+// Define an extent, the buffer at the end is needed to include all the transects.                                
+var region1 = ee.Feature(ee.Geometry.MultiPolygon(table.geometry().coordinates()).bounds()).buffer(500).bounds()
+
+//Just to double check, get nominal scale of the image
+var iscale = ic.projection().nominalScale()
+
+// Export single image as an Asset
+Export.image.toAsset({image:ic,
+                      description: "full_ortho_srer_sept_2019_1cm",
+                      assetId: "users/jgillan/full_ortho_sept",
+                      scale: iscale.getInfo(),
+                      region: region1,
+                      maxPixels: 1.0e13
+                      })
+
+//Add asset to map
+Map.addLayer(ic,{},'full_ortho_sept')  
+Map.setCenter(-110.8499, 31.8109,13)
+
+
+//Put all vegetation height models into an image collection
+var ic_VHM = ee.ImageCollection
+           .fromImages([image1_VHM,image2_VHM]);
+
+//Mosaic all of the canopy height models
+var ic2 = ic_VHM.mosaic()
+
+//Sets a projection using one of the image's coordinate ref. system as well as the scale in meters
+ic2 = ic2.setDefaultProjection({crs:image.projection().crs(),
+                                                scale:0.01  // 1cm                           
+                                })
+
+// Define an extent, the buffer at the end is needed to include all the transects.                                
+var region1 = ee.Feature(ee.Geometry.MultiPolygon(table.geometry().coordinates()).bounds()).buffer(500).bounds()
+
+// Just to double check, get nominal scale of the image
+var iscale = ic2.projection().nominalScale()
+
+// Export single image as an Asset
+Export.image.toAsset({image:ic2,
+                      description: "full_VHM_srer_sept_2019_1cm",
+                      assetId: "users/geponce................./full_VHM_sept",
+                      scale: iscale.getInfo(),
+                      region: region1,
+                      maxPixels: 1.0e13
+                      })
+
+print('ic2', ic2)
+
+//Add Vegetation Height models to map
+Map.addLayer(ic2,{},'Vegetation Height') 
+
+//Calculate Green leaf algorithm from orthomosaic
+var GLA = image.expression(
+    '((2 * Green) - Red - Blue) / ((2 * Green) + Red + Blue)', {
+      'Red': image.select('b1'),
+      'Green': image.select('b2'),
+      'Blue': image.select('b3')
+      }).rename('GLA');
+print('GLA', GLA)
+
+//Add GLA to map display
+Map.addLayer(GLA,{},'GLA')
+
+//Convert orthomosaic from int8 to float. That way all features are in same data type
+var image_float = image.toFloat()
+print('image_float', image_float)
+
+///////////////////////////////Supervised Classification////////////////////////////////////////////////
+
+//Removing the periphery of the Vegetation Height Model images. In some plots, the VHM had a broader extent compared to the orthomosaics. This mask makes them basically the same size.
+
+var vhm = vhm_2019.mosaic()
+var mask = image.select('b1').neq(0);
+vhm = vhm.updateMask(mask)
+
+//print('image3', image3)
+
+//selecting the bands from the orthomosaic and vegetation height model
+var bands2 = image_float.select('b1', 'b2', 'b3').rename(['RED','GREEN','BLUE'])
+var VHM_band = vhm.select('b1').rename('CHM_BAND')
+
+//Stacking the green leaf algorithm, the orthomosaic, and VHM (total of 5 bands)
+var stack = GLA.addBands(bands2).addBands(VHM_band)
+var bands3 = stack.bandNames()
+print('bands3', bands3)
+print('stack', stack)
+
+//convert the individual training data geometries into a FeatureCollection. Class types are distinguished by 'class'
+var polygons = ee.FeatureCollection([
+  ee.Feature(herb, {'class': 0}),
+  ee.Feature(woody, {'class': 1}),
+  ee.Feature(bareground, {'class': 2}),
+  ee.Feature(shadow, {'class': 3}),
+  ])
+  
+//Extract the features values (GLA, red, green, blue, VHM) for all pixels within the regions defined in 'polygons'
+//This is the training data
+  var training = stack.sampleRegions({
+   collection: polygons,
+   properties: ['class'],
+    scale: 0.05
+  })
+  
+// Train a CART classifier with default parameters.
+var trained = ee.Classifier.cart().train(training, 'class', bands3);
+  
+print('trained', trained)
+
+//Classify the image
+var classified = stack.classify(trained);
+print('classified', classified)
+
+//Describe all the decision trees.
+var explained = trained.explain()
+print('explained', explained)
+
+//Add the classified image to the map display
+Map.addLayer(classified,
+             {min: 0, max: 3, palette: ['81FA4C', '245A0D', '996633', '100400']},
+             'classification');      
+
+//Some performance tests and Confuson matrix
+var testing_feat = testing_bare.merge(testing_woody).merge(testing_herb).merge(testing_shadow)  
+
+ var performance = stack.sampleRegions({
+   collection: testing_feat,
+   properties: ['class'],
+    scale: 0.05
+  })
+  
+ var withRandom = performance.randomColumn();
+ print('withRandom',withRandom);
+
+ //Approximately 50% for testing
+var testingPartition = withRandom.filter(ee.Filter.lt('random', 0.9));
+// Approximately 50% for validation
+var validationPartition = withRandom.filter(ee.Filter.gte('random', 0.1));
+var test = testingPartition.classify(trained);
+print('test', test)
+ //Add confusion matrix
+ var confusionMatrix = test.errorMatrix('class', 'classification');
+ print('confusion matrix', confusionMatrix);
+
+//////////Make a Bar Chart //////////////////////
+//Specify the area where you are counting pixels per class. The ‘tables’ in this example represent the footprints of all the orthmosaics at Santa Rita, Arizona 
+var tables = table7.merge(table8).merge(table9)
+
+var options = {
+  lineWidth: 1,
+  pointSize: 2,
+  hAxis: {title: 'Classes'},
+  vAxis: {title: 'Area m^2'},
+  title: 'Area by class',
+  series: {
+    0: { color: '81FA4C'},
+    1: { color: '245A0D'},
+    2: { color: '996633'},
+    3: { color: '100400'},
+  }
+};
+
+var areaChart = ui.Chart.image.byClass({
+  image: ee.Image.pixelArea().addBands(classified),
+  classBand: 'classification', 
+  region: tables,
+  scale: 1,
+  reducer: ee.Reducer.sum()
+}).setOptions(options)
+  .setSeriesNames(['0_herb', '1_woody', '2_bareground', '3_shadow']);
+print(areaChart);
+
+Map.addLayer(image,{},'Ortho')
