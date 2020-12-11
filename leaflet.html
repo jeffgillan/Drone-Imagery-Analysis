@@ -1,0 +1,168 @@
+<!--Additional instructions are given on GitHub: https://github.com/tyson-swetnam/rem-srer -->
+<html lang="en">
+  <head>
+    <meta charset="UTF-8">
+    <title>rem-srer leaflet demo</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.6.0/dist/leaflet.css"
+        integrity="sha512-xwE/Az9zrjBIphAcBb3F6JVqxf46+CDLwfLMHloNu6KEQCAWi6HcDUbeOfBIptF7tcCzusKFjFw2yuvEpDL9wQ=="
+        crossorigin=""/>
+    <!-- Import Scripts -->
+    <script src="https://unpkg.com/leaflet@1.6.0/dist/leaflet.js"
+        integrity="sha512-gZwIG9x3wUXg2hdXF6+rVkLF/0Vi9U8D2Ntg4Ga5I5BZpVkVxlJWbSQtXPSiUTtC0TjtGOmxa1AJPuV0CPthew=="
+        crossorigin=""></script>
+    <script src="https://code.jquery.com/jquery-3.5.1.min.js"></script>
+    <script src="https://api.mapbox.com/mapbox-gl-js/v1.10.0/mapbox-gl.js"></script>
+    <link href="https://api.mapbox.com/mapbox-gl-js/v1.10.0/mapbox-gl.css" rel="stylesheet" />
+    <script src="https://unpkg.com/mapbox-gl-leaflet/leaflet-mapbox-gl.js"></script>
+
+    <style>
+        #map {
+          height: 100%;
+        }
+
+    </style>
+  </head>
+  <body>
+    <!--Return to CyVerse -->
+    <div><p><a href="https://data.cyverse.org/dav-anon/iplant/commons/community_released/aes/srer/suas/2019/ecostate_mapping" target="_blank">back to CyVerse</a></p>
+
+    <div id="map"></div>
+    <script>
+
+        //Initialize Overlays
+        var overlays = {
+
+        };
+        //set Mapbox token for topographic basemap
+        mapboxgl.accessToken = "pk.eyJ1IjoidHN3ZXRuYW0iLCJhIjoiY2thMDFlaGg1MDA0NDNmbmtiOTRxaGpjbiJ9.MppcZYIq9wX8QUBjFbH0Kw";
+
+        //Initialize a set of BaseMaps from Mapbox, OpenStreetMap and Google Maps and allow user to select each one
+        var basemaps = {
+          "MapboxOutdoors": L.mapboxGL(
+          {
+            style: 'mapbox://styles/mapbox/outdoors-v11', //hosted style id for MapBox terrain
+            token: mapboxgl.accessToken
+            }
+           ),
+          "OpenStreetMaps": L.tileLayer(
+            "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",
+            {
+              attribution: 'Map data &copy; <a href="https://www.openstreetmap.org/">OpenStreetMap</a> contributors, <a href="https://creativecommons.org/licenses/by-sa/2.0/">CC-BY-SA</a>, sUAS Data Source © <a href="https://cals.arizona.edu/srer/">The University of Arizona, Arizona Experiment Station</a>',
+              minZoom: 12,
+              maxZoom: 21,
+              id: "osm.streets"
+            }
+          ),
+          "Google-Map": L.tileLayer(
+            "https://mt1.google.com/vt/lyrs=r&x={x}&y={y}&z={z}",
+            {
+              minZoom: 12,
+              maxZoom: 21,
+              id: "google.street"
+            }
+          ),
+          "Google-Satellite": L.tileLayer(
+            "https://mt1.google.com/vt/lyrs=s&x={x}&y={y}&z={z}",
+            {
+              minZoom: 12,
+              maxZoom: 21,
+              id: "google.satellite"
+            }
+          ),
+          "Google-Hybrid": L.tileLayer(
+            "https://mt1.google.com/vt/lyrs=y&x={x}&y={y}&z={z}",
+            {
+              minZoom: 12,
+              maxZoom: 21,
+              id: "google.hybrid"
+            }
+          )
+        };
+
+        //Map Options when map opens initially in the browser
+        var mapOptions = {
+          zoomControl: true,
+          attributionControl: true,
+          center: [31.8229434318608, -110.83910972595218],
+          zoom: 13,
+          layers: [basemaps.OpenStreetMaps]
+        };
+
+        //Render the Main Map Leaflet
+        var map = L.map("map", mapOptions);
+
+        //Initialize Layer Controls in the legend of the map
+        var layerControl = L.control.layers(basemaps, overlays).addTo(map);
+
+        // custom colors for vector polygons
+        var boundaryStyle = {
+            "fillColor": "#ff7800",
+            "fillOpacity": 0.1,
+            "color": "#ff7800",
+            "weight": 1,
+            "opacity": 0.65
+        };
+
+        var plotStyle = {
+            "fillColor": "#000000",
+            "fillOpacity": 0.1,
+            "color": "#000000",
+            "weight": 1,
+            "opacity": 0.65
+        };
+
+        // create function for boundary of SRER geoJSON
+        function addBoundaryToMap(boundary, map) {
+            var dataLayer = L.geoJson(boundary);
+            dataLayer.addTo(map);
+        }
+        //get the SRER boundary geoJSON from CyVerse Data Store
+        $.getJSON("https://data.cyverse.org/dav-anon/iplant/commons/community_released/aes/srer/suas/2019/ecostate_mapping/leaflet_map/srer_boundary.geojson", function(boundary) { addBoundaryToMap(boundary, map); });
+        // provide hyperlink back to the SRER website
+        function addBoundaryToMap(boundary, map) {
+            var dataLayer = L.geoJson(boundary, {
+                style: boundaryStyle,
+                onEachFeature: function(feature, layer) {
+                    var popupText = "Santa Rita Experimental Range Boundary"
+                        + "<br><a href='https://cals.arizona.edu/srer/data.html' target='_blank'>Get Data</a>";
+                    layer.bindPopup(popupText); }
+                });
+            dataLayer.addTo(map);
+        }
+
+        // Add Plots geoJSON
+        function addDataToMap(plot_data, map) {
+            var dataLayer = L.geoJson(plot_data);
+            dataLayer.addTo(map);
+        }
+        //get the geojson from the CyVerse Data Store
+        $.getJSON("https://data.cyverse.org/dav-anon/iplant/commons/community_released/aes/srer/suas/2019/ecostate_mapping/leaflet_map/suas-footprints.geojson", function(plot_data) { addDataToMap(plot_data, map); });
+        //add an explanation to the pop-up window in the map for how to access the data
+        function addDataToMap(plot_data, map) {
+            var dataLayer = L.geoJson(plot_data, {
+                style: plotStyle,
+                onEachFeature: function(feature, layer) {
+                    var popupText = "<strong>Plot ID number</strong>: " + feature.properties.Plot_ID
+                        + "<br><strong>Select a Data Visualization:</strong>"
+                        + "<br><a href='https://geotiffjs.github.io/cog-explorer/#long=-110.852&lat=31.809&zoom=14&scene=https://data.cyverse.org/dav-anon/iplant/commons/community_released/aes/srer/suas/2019/ecostate_mapping/raster_products/May_2019/" + feature.properties.Plot_ID + "_products/" + feature.properties.Plot_ID + "_ortho.tif&bands=&pipeline=' target='_blank'>May GeoTiff orthomosaic</a>"
+                        + "<br><a href='https://geotiffjs.github.io/cog-explorer/#long=-110.852&lat=31.809&zoom=14&scene=https://data.cyverse.org/dav-anon/iplant/commons/community_released/aes/srer/suas/2019/ecostate_mapping/raster_products/Sept_2019/" + feature.properties.Plot_ID + "/" + feature.properties.Plot_ID + "_ortho.tif&bands=&pipeline=' target='_blank'>September GeoTiff orthomosaic</a>"
+                        + "<br><a href='https://potree.entwine.io/data/view.html?r=%22https://data.cyverse.org/dav-anon/iplant/commons/community_released/aes/srer/suas/2019/ecostate_mapping/pointclouds/ept/may_2019/" + feature.properties.Plot_ID + "%22 ' target='_blank'>May EPT point cloud</a>"
+                        + "<br><a href='https://potree.entwine.io/data/view.html?r=%22https://data.cyverse.org/dav-anon/iplant/commons/community_released/aes/srer/suas/2019/ecostate_mapping/pointclouds/ept/sept_2019/" + feature.properties.Plot_ID + "%22 ' target='_blank'>September EPT point cloud</a>";
+                    layer.bindPopup(popupText);
+                    var label = L.marker(layer.getBounds().getCenter(), {
+                      icon: L.divIcon({
+                        className: 'label',
+                        opacity: 0.5,
+                        riseOnHover: true,
+                        html: feature.properties.Plot_ID,
+                        iconSize: [0, 0]
+                      })
+                    }).addTo(map).bindPopup(popupText);}
+                });
+            dataLayer.addTo(map);
+        }
+
+    </script>
+  </body>
+</html>
